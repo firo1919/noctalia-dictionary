@@ -1,6 +1,6 @@
 --!nonstrict
 -- Dictionary panel for Noctalia.
--- Shows offline definition card, manual search input, history, and text selection trigger.
+-- Shows offline definition card, manual search input, progressive suggestions, and history.
 
 local currentData = nil
 local searchInput = ""
@@ -68,13 +68,6 @@ local function onCopyCurrent()
   end
 end
 
-local function triggerSelection()
-  panel.close()
-  noctalia.setTimeout(200, function()
-    noctalia.sendIpc("firo1919/dictionary:widget", "grab")
-  end)
-end
-
 function render()
   local children = {}
 
@@ -90,16 +83,10 @@ function render()
         color = "on_surface",
         flexGrow = 1,
       }),
-      ui.button({
-        text = tr("panel.btn_grab"),
-        glyph = "crosshair",
-        variant = "ghost",
-        onClick = triggerSelection,
-      }),
     })
   )
 
-  -- Search Row
+  -- Search Input Row
   table.insert(
     children,
     ui.row({ gap = 6, align = "center" }, {
@@ -209,13 +196,18 @@ function render()
       })
     )
 
+    -- Progressive Backoff Suggestions
     local suggs = currentData.suggestions or {}
     if #suggs > 0 then
-      table.insert(contentItems, ui.label({
-        text = tr("panel.suggestions_title"),
-        fontSize = 11,
-        color = "on_surface_variant",
-      }))
+      table.insert(
+        contentItems,
+        ui.label({
+          text = tr("panel.suggestions_title"),
+          fontSize = 11,
+          color = "on_surface_variant",
+          fontWeight = "bold",
+        })
+      )
 
       local chips = {}
       for _, s in ipairs(suggs) do
@@ -224,6 +216,7 @@ function render()
           ui.button({
             text = s,
             variant = "ghost",
+            fontSize = 11,
             onClick = function()
               searchInput = s
               doSearch(s)
@@ -270,6 +263,9 @@ function onOpen(_context)
   local stateData = noctalia.state.get("dict_current")
   if stateData and type(stateData) == "table" then
     currentData = stateData
+    if stateData.word and stateData.word ~= "" then
+      searchInput = stateData.word
+    end
     if stateData.found and stateData.word then
       recordHistory(stateData.word)
     end
@@ -285,6 +281,9 @@ noctalia.state.watch("dict_current", function(val)
   if val and type(val) == "table" then
     currentData = val
     copyStatus = tr("panel.btn_copy")
+    if val.word and val.word ~= "" then
+      searchInput = val.word
+    end
     if val.found and val.word then
       recordHistory(val.word)
     end

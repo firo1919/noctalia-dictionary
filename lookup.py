@@ -1,224 +1,220 @@
 #!/usr/bin/env python3
 """
-Lightweight offline English dictionary lookup engine for Noctalia.
-Supports:
-1. Local SQLite Database (176,000+ words with lemmatization, zero dependencies)
-2. sdcv (StarDict Console Version, if installed with dictionaries)
-3. dict (DICT client, if installed)
+High-speed offline dictionary query engine for Noctalia Dictionary Plugin.
+Ships with Webster's 1913 dictionary compressed via xz (data/webster1913.sqlite.xz).
+Auto-decompresses into ~/.cache/noctalia-dictionary/ on first run.
+
+Features:
+- Candidate morphology rules (plurals, -ing, -ed, -ly, -er, -est, etc.)
+- Progressive prefix backoff suggestions when an exact match is missing
+- Sub-millisecond indexed SQLite queries
 """
 
 import sys
 import os
 import re
 import json
-import shutil
+import lzma
 import sqlite3
-import subprocess
 
-DEFAULT_DB_PATH = os.path.expanduser("~/.local/share/noctalia/dictionary/dictionary.db")
-LOCAL_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dictionary.db")
+CACHE_DIR = os.path.expanduser("~/.cache/noctalia-dictionary")
+RUNTIME_DB = os.path.join(CACHE_DIR, "webster1913.sqlite")
+PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
+COMPRESSED_SRC = os.path.join(PLUGIN_DIR, "data", "webster1913.sqlite.xz")
+LOCAL_UNCOMPRESSED = os.path.expanduser("~/.local/share/noctalia/dictionary/dictionary.db")
 
-def clean_word(raw):
-    s = raw.strip()
-    s = re.sub(r"^[^a-zA-Z]+|[^a-zA-Z]+$", "", s)
-    return s.strip().lower()
+def ensure_database():
+    """Ensure the uncompressed SQLite database is ready in the cache directory."""
+    if os.path.isfile(RUNTIME_DB):
+        return RUNTIME_DB
 
-def lookup_sdcv(word):
-    """Query local StarDict dictionaries via sdcv if installed."""
-    if not shutil.which("sdcv"):
+    # Check if local share already has it
+    if os.path.isfile(LOCAL_UNCOMPRESSED):
+        return LOCAL_UNCOMPRESSED
+
+    if not os.path.isfile(COMPRESSED_SRC):
         return None
 
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    tmp_path = RUNTIME_DB + ".tmp"
     try:
-        res = subprocess.run(
-            ["sdcv", "-n", "--utf8-output", word],
-            capture_output=True,
-            text=True,
-            timeout=3
-        )
-        out = res.stdout.strip()
-        if not out or "Nothing similar to" in out or "No dictionaries found" in out:
-            return None
-
-        lines = out.splitlines()
-        clean_lines = []
-        for line in lines:
-            if line.startswith("-->"):
-                continue
-            l = line.strip()
-            if l:
-                clean_lines.append(l)
-
-        if clean_lines:
-            defs = clean_lines[:6]
-            return {
-                "found": True,
-                "word": word,
-                "backend": "sdcv",
-                "wordtype": "",
-                "definitions": defs,
-                "summary": f"{word}: {defs[0]}"
-            }
-    except Exception:
-        pass
-    return None
-
-def lookup_dict_cli(word):
-    """Query dict client if installed."""
-    if not shutil.which("dict"):
-        return None
-
-    try:
-        res = subprocess.run(
-            ["dict", "-d", "all", word],
-            capture_output=True,
-            text=True,
-            timeout=3
-        )
-        out = res.stdout.strip()
-        if not out or "No definitions found" in out or "could not connect" in out:
-            return None
-
-        lines = [l.strip() for l in out.splitlines() if l.strip() and not l.startswith("From ")]
-        if lines:
-            defs = lines[:6]
-            return {
-                "found": True,
-                "word": word,
-                "backend": "dict",
-                "wordtype": "",
-                "definitions": defs,
-                "summary": f"{word}: {defs[0]}"
-            }
-    except Exception:
-        pass
-    return None
-
-def lemmatize(word):
-    candidates = [word]
-    if word.endswith("ies") and len(word) > 4:
-        candidates.append(word[:-3] + "y")
-    if word.endswith("es") and len(word) > 3:
-        candidates.append(word[:-2])
-        candidates.append(word[:-1])
-    if word.endswith("s") and len(word) > 2 and not word.endswith("ss"):
-        candidates.append(word[:-1])
-    if word.endswith("ed") and len(word) > 3:
-        candidates.append(word[:-2])
-        candidates.append(word[:-1])
-    if word.endswith("ing") and len(word) > 4:
-        candidates.append(word[:-3])
-        candidates.append(word[:-3] + "e")
-        if len(word) > 5 and word[-4] == word[-5]:
-            candidates.append(word[:-4])
-    if word.endswith("ly") and len(word) > 3:
-        candidates.append(word[:-2])
-        candidates.append(word[:-2] + "le")
-    return candidates
-
-def lookup_sqlite_single(word):
-    db_path = None
-    if os.path.isfile(DEFAULT_DB_PATH):
-        db_path = DEFAULT_DB_PATH
-    elif os.path.isfile(LOCAL_DB_PATH):
-        db_path = LOCAL_DB_PATH
-
-    if not db_path:
-        return None
-
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        candidates = lemmatize(word)
-
-        found_word = None
-        rows = []
-
-        for cand in candidates:
-            cursor.execute("SELECT word, wordtype, definition FROM entries WHERE word = ? COLLATE NOCASE", (cand,))
-            results = cursor.fetchall()
-            if results:
-                found_word = cand
-                rows = results
-                break
-
-        if not rows:
-            cursor.execute("SELECT DISTINCT word FROM entries WHERE word LIKE ? LIMIT 6", (word + "%",))
-            suggestions = [r[0] for r in cursor.fetchall()]
-            conn.close()
-            return {
-                "found": False,
-                "word": word,
-                "suggestions": suggestions,
-                "error": f"No definition found for '{word}'"
-            }
-
-        conn.close()
-
-        definitions = []
-        wordtypes = set()
-
-        for w, wt, d in rows:
-            if wt and wt.strip():
-                wordtypes.add(wt.strip())
-            clean_def = re.sub(r"\s+", " ", d.strip())
-            definitions.append(clean_def)
-
-        type_str = ", ".join(sorted(wordtypes)) if wordtypes else ""
-        summary = f"{found_word}" + (f" ({type_str})" if type_str else "") + f": {definitions[0]}"
-
-        return {
-            "found": True,
-            "word": found_word,
-            "backend": "sqlite",
-            "wordtype": type_str,
-            "definitions": definitions[:8],
-            "summary": summary
-        }
+        with lzma.open(COMPRESSED_SRC, "rb") as f_in, open(tmp_path, "wb") as f_out:
+            while True:
+                chunk = f_in.read(1024 * 1024)
+                if not chunk:
+                    break
+                f_out.write(chunk)
+        os.replace(tmp_path, RUNTIME_DB)
+        return RUNTIME_DB
     except Exception as e:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        return None
+
+def normalize_query(raw):
+    # Cap to 400 characters, normalize whitespace, lowercase
+    s = raw[:400]
+    s = s.replace("\n", " ").replace("\t", " ")
+    s = re.sub(r"[^a-zA-Z0-9'’\s-]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip().lower()
+    return s
+
+def build_candidates(norm_query):
+    """
+    Build ordered candidates: full phrase, first word,
+    and light morphology rules (from omarchy-lookup / GCIDE).
+    """
+    cands = []
+    seen = set()
+
+    def add(c):
+        if c and c not in seen:
+            seen.add(c)
+            cands.append(c)
+
+    add(norm_query)
+
+    first = norm_query.split()[0] if " " in norm_query else norm_query
+    add(first)
+
+    w = first
+    # -ies -> -y
+    if w.endswith("ies") and len(w) > 4:
+        add(w[:-3] + "y")
+    # -sses, -shes, -ches, -xes, -zes -> -es
+    for suffix in ("sses", "shes", "ches", "xes", "zes"):
+        if w.endswith(suffix) and len(w) > len(suffix):
+            add(w[:-2])
+    # -es -> -s, -
+    if w.endswith("es") and len(w) > 3:
+        add(w[:-1])
+        add(w[:-2])
+    # -s -> -
+    if w.endswith("s") and len(w) > 2 and not w.endswith("ss"):
+        add(w[:-1])
+    # -ing -> -, -e
+    if w.endswith("ing") and len(w) > 4:
+        add(w[:-3])
+        add(w[:-3] + "e")
+        if len(w) > 5 and w[-4] == w[-5]:
+            add(w[:-4])
+    # -ed -> -, -d, -e
+    if w.endswith("ed") and len(w) > 3:
+        add(w[:-2])
+        add(w[:-1])
+        add(w[:-2] + "e")
+    # -ly -> -
+    if w.endswith("ly") and len(w) > 4:
+        add(w[:-2])
+        add(w[:-2] + "le")
+    # -er -> -, -e
+    if w.endswith("er") and len(w) > 4:
+        add(w[:-2])
+        add(w[:-1])
+    # -est -> -
+    if w.endswith("est") and len(w) > 5:
+        add(w[:-3])
+        add(w[:-2])
+
+    return first, cands
+
+def progressive_suggestions(cursor, word):
+    """
+    Progressive prefix backoff: if word misses, shorten the prefix
+    from length n down to 4 characters until matching suggestions are found.
+    """
+    n = len(word)
+    for p in range(n, 3, -1):
+        prefix = word[:p]
+        cursor.execute(
+            "SELECT DISTINCT word FROM entries WHERE word LIKE ? ORDER BY length(word), word LIMIT 8",
+            (prefix + "%",)
+        )
+        suggs = [r[0] for r in cursor.fetchall()]
+        if suggs:
+            return suggs
+    return []
+
+def query_database(raw_query):
+    norm = normalize_query(raw_query)
+    if not norm:
         return {
+            "query": raw_query,
+            "word": "",
             "found": False,
-            "word": word,
-            "error": str(e)
+            "definitions": [],
+            "suggestions": [],
+            "error": "Empty search query"
         }
 
-def lookup_query(raw_query):
-    # Try exact / full cleaned word first
-    clean = clean_word(raw_query)
-    if not clean:
-        return {"found": False, "word": raw_query, "error": "No valid word selected"}
+    first_word, candidates = build_candidates(norm)
 
-    # 1. Try SDCV
-    res = lookup_sdcv(clean)
-    if res and res.get("found"):
-        return res
+    db_path = ensure_database()
+    if not db_path:
+        return {
+            "query": raw_query,
+            "word": first_word,
+            "found": False,
+            "definitions": [],
+            "suggestions": [],
+            "error": "Database not found or could not decompress"
+        }
 
-    # 2. Try dict CLI
-    res = lookup_dict_cli(clean)
-    if res and res.get("found"):
-        return res
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
 
-    # 3. Try SQLite
-    res = lookup_sqlite_single(clean)
-    if res and res.get("found"):
-        return res
+    found_word = None
+    rows = []
 
-    # 4. If query had multiple words, try first word as fallback
-    words = raw_query.strip().split()
-    if len(words) > 1:
-        first = clean_word(words[0])
-        if first and first != clean:
-            first_res = lookup_query(first)
-            if first_res and first_res.get("found"):
-                return first_res
+    for cand in candidates:
+        cursor.execute(
+            "SELECT word, wordtype, definition FROM entries WHERE word = ? COLLATE NOCASE LIMIT 12",
+            (cand,)
+        )
+        results = cursor.fetchall()
+        if results:
+            found_word = cand
+            rows = results
+            break
 
-    # Return suggestions from the original single lookup if available
-    if res:
-        return res
+    if not rows:
+        # Exact word missed: run progressive prefix backoff
+        suggestions = progressive_suggestions(cursor, first_word)
+        conn.close()
+        return {
+            "query": raw_query,
+            "word": first_word,
+            "found": False,
+            "definitions": [],
+            "suggestions": suggestions,
+            "error": f"No definition found for '{first_word}'"
+        }
+
+    conn.close()
+
+    definitions = []
+    wordtypes = set()
+
+    for w, wt, d in rows:
+        if wt and wt.strip():
+            wordtypes.add(wt.strip())
+        clean_d = re.sub(r"\s+", " ", d.strip())
+        definitions.append(clean_d)
+
+    type_str = ", ".join(sorted(wordtypes)) if wordtypes else ""
+    summary = f"{found_word}" + (f" ({type_str})" if type_str else "") + f": {definitions[0]}"
 
     return {
-        "found": False,
-        "word": clean,
-        "error": f"No definition found for '{clean}'"
+        "query": raw_query,
+        "word": found_word,
+        "found": True,
+        "wordtype": type_str,
+        "definitions": definitions[:10],
+        "summary": summary,
+        "suggestions": []
     }
 
 def main():
@@ -227,7 +223,7 @@ def main():
         sys.exit(1)
 
     query = " ".join(sys.argv[1:])
-    result = lookup_query(query)
+    result = query_database(query)
     print(json.dumps(result))
 
 if __name__ == "__main__":

@@ -1,12 +1,12 @@
 id           = "firo1919/dictionary"
 name         = "Dictionary"
-version      = "0.3.0"
+version      = "0.4.0"
 plugin_api   = 14
 author       = "firo1919"
 license      = "MIT"
 icon         = "vocabulary"
-description  = "Fast offline dictionary. Click to drag a box over any text on screen (in browsers, videos, PDFs, or apps) to instantly look up its definition and copy to clipboard."
-dependencies = ["grim", "slurp", "tesseract", "python3"]
+description  = "Fast offline dictionary. Click to look up any highlighted or copied word on screen with progressive search and auto-clipboard copy."
+dependencies = ["wl-paste", "python3"]
 tags         = ["utility", "productivity", "dictionary", "offline"]
 
 # ── General Settings ──────────────────────────────────────────────────────────
@@ -31,18 +31,6 @@ type            = "bool"
 label_key       = "settings.show_panel_on_lookup.label"
 description_key = "settings.show_panel_on_lookup.description"
 default         = true
-
-[[setting]]
-key             = "psm"
-type            = "select"
-label_key       = "settings.psm.label"
-description_key = "settings.psm.description"
-default         = "6"
-options = [
-  { value = "6", label_key = "settings.psm.options.block" },
-  { value = "7", label_key = "settings.psm.options.line" },
-  { value = "8", label_key = "settings.psm.options.word" },
-]
 
 # ── Panel ─────────────────────────────────────────────────────────────────────
 
