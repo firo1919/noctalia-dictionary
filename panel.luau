@@ -1,6 +1,6 @@
 --!nonstrict
 -- Dictionary panel for Noctalia.
--- Shows offline definition card, manual search input, history, and screen grab trigger.
+-- Shows offline definition card, manual search input, history, and text selection trigger.
 
 local currentData = nil
 local searchInput = ""
@@ -68,10 +68,10 @@ local function onCopyCurrent()
   end
 end
 
-local function triggerScreenGrab()
+local function triggerSelection()
   panel.close()
-  noctalia.setTimeout(250, function()
-    noctalia.sendIpc("firomsa/dictionary:widget", "grab")
+  noctalia.setTimeout(200, function()
+    noctalia.sendIpc("firomsa/dictionary:widget", "trigger")
   end)
 end
 
@@ -92,9 +92,9 @@ function render()
       }),
       ui.button({
         text = tr("panel.btn_grab"),
-        glyph = "crosshair",
+        glyph = "pointer",
         variant = "ghost",
-        onClick = triggerScreenGrab,
+        onClick = triggerSelection,
       }),
     })
   )

@@ -1,16 +1,13 @@
 --!nonstrict
 -- Dictionary status bar widget for Noctalia.
--- Click to select any text on screen with slurp + grim, OCR with tesseract,
--- and instantly view/copy its offline dictionary definition.
+-- Click to define currently highlighted text on screen, or click to wait for selection.
+-- Completely native to Wayland (wl-paste) with zero OCR or screenshots needed.
 
-local busy = false
-local available = noctalia.commandExists("grim")
-  and noctalia.commandExists("slurp")
-  and noctalia.commandExists("tesseract")
-  and noctalia.commandExists("python3")
+local isWaiting = false
+local available = noctalia.commandExists("wl-paste") and noctalia.commandExists("python3")
 
-local function getLookupScriptPath()
-  return noctalia.pluginDir() .. "/lookup.py"
+local function getScriptPath(scriptName)
+  return noctalia.pluginDir() .. "/" .. scriptName
 end
 
 local function render()
@@ -28,16 +25,17 @@ local function render()
     }, {
       ui.glyph({ name = glyph, size = 15, color = "on_surface_variant" }),
     }))
-  elseif busy then
+  elseif isWaiting then
     barWidget.setTooltip(noctalia.tr("widget.capturing"))
     barWidget.render(container({
       align = "center",
       gap = 4,
       onClick = function()
-        noctalia.togglePanel("firomsa/dictionary:panel")
+        isWaiting = false
+        render()
       end,
     }, {
-      ui.glyph({ name = "crosshair", size = 15, color = "primary" }),
+      ui.glyph({ name = "pointer", size = 15, color = "primary" }),
     }))
   else
     barWidget.setTooltip(noctalia.tr("widget.tooltip"))
@@ -45,7 +43,7 @@ local function render()
       align = "center",
       gap = 4,
       onClick = function()
-        grabWord()
+        handleTrigger()
       end,
     }, {
       ui.glyph({ name = glyph, size = 15, color = "on_surface" }),
@@ -53,99 +51,104 @@ local function render()
   end
 end
 
-local function handleResult(res)
-  busy = false
-  render()
-
-  if res == nil or res.timedOut then
-    return
-  end
-  if res.exitCode == 40 then
-    -- Cancelled by user (Escape in slurp)
-    return
-  end
-  if res.exitCode == 42 then
-    noctalia.notifyError("Dictionary", "Screenshot capture failed (grim)")
-    return
-  end
-  if res.exitCode == 43 then
-    noctalia.notifyError("Dictionary", "OCR recognition failed (tesseract)")
+local function processWord(wordText)
+  local clean = noctalia.string.trim(wordText or "")
+  if clean == "" then
     return
   end
 
-  local stdout = res.stdout or ""
-  if stdout == "" then
-    return
-  end
+  local scriptPath = getScriptPath("lookup.py")
+  local cmd = 'python3 "' .. scriptPath .. '" ' .. string.format("%q", clean)
 
-  local ok, data = pcall(noctalia.json.decode, stdout)
-  if not ok or type(data) ~= "table" then
-    noctalia.notifyError("Dictionary", "Failed to parse lookup response")
-    return
-  end
+  noctalia.runAsync(cmd, function(res)
+    local stdout = (res and res.stdout) or ""
+    if stdout == "" then
+      return
+    end
 
-  -- Update shared state for the dictionary panel
-  noctalia.state.set("dict_current", data)
+    local ok, data = pcall(noctalia.json.decode, stdout)
+    if not ok or type(data) ~= "table" then
+      return
+    end
 
-  if data.found then
+    -- Update state for panel
+    noctalia.state.set("dict_current", data)
+
     local copyToClipboard = noctalia.getConfig("copy_to_clipboard") ~= false
     local showNotification = noctalia.getConfig("show_notification") ~= false
     local showPanel = noctalia.getConfig("show_panel_on_lookup") ~= false
 
-    if copyToClipboard and data.summary then
-      noctalia.copyToClipboard(data.summary, "text/plain")
-    end
-
-    if showNotification then
-      local title = data.word
-      if data.wordtype and data.wordtype ~= "" then
-        title = title .. " (" .. data.wordtype .. ")"
+    if data.found then
+      if copyToClipboard and data.summary then
+        noctalia.copyToClipboard(data.summary, "text/plain")
       end
-      local body = (data.definitions and data.definitions[1]) or ""
-      noctalia.notify(title, body)
-    end
 
-    if showPanel then
+      if showNotification then
+        local title = data.word
+        if data.wordtype and data.wordtype ~= "" then
+          title = title .. " (" .. data.wordtype .. ")"
+        end
+        local body = (data.definitions and data.definitions[1]) or ""
+        noctalia.notify(title, body)
+      end
+
+      if showPanel then
+        noctalia.togglePanel("firomsa/dictionary:panel")
+      end
+    else
+      local err = data.error or ("No definition found for '" .. (data.word or "") .. "'")
+      noctalia.notify("Dictionary", err)
       noctalia.togglePanel("firomsa/dictionary:panel")
     end
-  else
-    local err = data.error or ("No definition found for '" .. (data.word or "") .. "'")
-    noctalia.notify("Dictionary", err)
-    noctalia.togglePanel("firomsa/dictionary:panel")
-  end
+  end, 15000)
 end
 
-function grabWord()
-  if not available or busy then
+function handleTrigger()
+  if not available then
     return
   end
 
-  busy = true
-  render()
-
-  local psm = string.gsub(tostring(noctalia.getConfig("psm") or "6"), "%D", "")
-  if psm == "" then
-    psm = "6"
-  end
-
-  local scriptPath = getLookupScriptPath()
-
-  local cmd = 'geom="$(slurp)" || exit 40; '
-    .. 'img="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/noctalia-dict-XXXXXX.png")" || exit 41; '
-    .. 'trap \'rm -f "$img" 2>/dev/null\' EXIT; '
-    .. 'grim -g "$geom" "$img" || exit 42; '
-    .. 'txt="$(tesseract "$img" stdout -l eng --psm ' .. psm .. ' 2>/dev/null)" || exit 43; '
-    .. 'python3 "' .. scriptPath .. '" "$txt"'
-
-  if not noctalia.runAsync(cmd, handleResult, 60000) then
-    busy = false
+  if isWaiting then
+    isWaiting = false
     render()
-    noctalia.notifyError("Dictionary", "Failed to launch screen selection")
+    return
   end
+
+  -- Check if text is ALREADY highlighted on screen
+  noctalia.runAsync("wl-paste -p -n", function(res)
+    local currentSel = noctalia.string.trim((res and res.stdout) or "")
+    if currentSel ~= "" and #currentSel < 100 then
+      -- User already selected text! Immediately process it.
+      processWord(currentSel)
+    else
+      -- User has not selected text yet; arm waiting mode
+      isWaiting = true
+      render()
+
+      local timeoutSec = tonumber(noctalia.getConfig("selection_timeout_seconds")) or 15
+      local watchScript = getScriptPath("watch_selection.py")
+      local cmd = 'python3 "' .. watchScript .. '" ' .. tostring(timeoutSec)
+
+      noctalia.runAsync(cmd, function(watchRes)
+        if not isWaiting then
+          return -- was cancelled
+        end
+        isWaiting = false
+        render()
+
+        if watchRes and watchRes.exitCode == 0 and watchRes.stdout and watchRes.stdout ~= "" then
+          local selected = noctalia.string.trim(watchRes.stdout)
+          if selected ~= "" then
+            processWord(selected)
+          end
+        end
+      end, (timeoutSec + 2) * 1000)
+    end
+  end, 2000)
 end
 
 function onClick()
-  grabWord()
+  handleTrigger()
 end
 
 function onRightClick()
@@ -153,8 +156,8 @@ function onRightClick()
 end
 
 function onIpc(event, _payload)
-  if event == "grab" then
-    grabWord()
+  if event == "trigger" or event == "grab" then
+    handleTrigger()
   end
 end
 

@@ -1,33 +1,102 @@
 #!/usr/bin/env python3
 """
-Lightweight offline English dictionary lookup engine for Noctalia Dictionary Plugin.
-Uses a local indexed SQLite dictionary (Webster/WordNet) with sub-millisecond query latency.
+Lightweight offline English dictionary lookup engine for Noctalia.
+Supports:
+1. Local SQLite Database (176,000+ words with lemmatization, zero dependencies)
+2. sdcv (StarDict Console Version, if installed with dictionaries)
+3. dict (DICT client, if installed)
 """
 
 import sys
 import os
 import re
 import json
+import shutil
 import sqlite3
+import subprocess
 
 DEFAULT_DB_PATH = os.path.expanduser("~/.local/share/noctalia/dictionary/dictionary.db")
 LOCAL_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dictionary.db")
 
-def get_db_connection():
-    if os.path.isfile(DEFAULT_DB_PATH):
-        return sqlite3.connect(DEFAULT_DB_PATH)
-    elif os.path.isfile(LOCAL_DB_PATH):
-        return sqlite3.connect(LOCAL_DB_PATH)
-    return None
-
 def clean_word(raw):
-    # Strip any enclosing punctuation, quotes, brackets, or numbers
     s = raw.strip()
+    # Strip quotes, punctuation, brackets
     s = re.sub(r"^[^a-zA-Z]+|[^a-zA-Z]+$", "", s)
     return s.strip().lower()
 
+def lookup_sdcv(word):
+    """Query local StarDict dictionaries via sdcv if installed."""
+    if not shutil.which("sdcv"):
+        return None
+
+    try:
+        res = subprocess.run(
+            ["sdcv", "-n", "--utf8-output", word],
+            capture_output=True,
+            text=True,
+            timeout=3
+        )
+        out = res.stdout.strip()
+        if not out or "Nothing similar to" in out or "No dictionaries found" in out:
+            return None
+
+        # Parse sdcv output
+        definitions = []
+        lines = out.splitlines()
+        clean_lines = []
+        for line in lines:
+            if line.startswith("-->"):
+                continue
+            l = line.strip()
+            if l:
+                clean_lines.append(l)
+
+        if clean_lines:
+            defs = clean_lines[:6]
+            return {
+                "found": True,
+                "word": word,
+                "backend": "sdcv",
+                "wordtype": "",
+                "definitions": defs,
+                "summary": f"{word}: {defs[0]}"
+            }
+    except Exception:
+        pass
+    return None
+
+def lookup_dict_cli(word):
+    """Query dict client if installed."""
+    if not shutil.which("dict"):
+        return None
+
+    try:
+        res = subprocess.run(
+            ["dict", "-d", "all", word],
+            capture_output=True,
+            text=True,
+            timeout=3
+        )
+        out = res.stdout.strip()
+        if not out or "No definitions found" in out or "could not connect" in out:
+            return None
+
+        lines = [l.strip() for l in out.splitlines() if l.strip() and not l.startswith("From ")]
+        if lines:
+            defs = lines[:6]
+            return {
+                "found": True,
+                "word": word,
+                "backend": "dict",
+                "wordtype": "",
+                "definitions": defs,
+                "summary": f"{word}: {defs[0]}"
+            }
+    except Exception:
+        pass
+    return None
+
 def lemmatize(word):
-    """Generate potential root candidates for plurals and verb inflections."""
     candidates = [word]
     if word.endswith("ies") and len(word) > 4:
         candidates.append(word[:-3] + "y")
@@ -42,77 +111,103 @@ def lemmatize(word):
     if word.endswith("ing") and len(word) > 4:
         candidates.append(word[:-3])
         candidates.append(word[:-3] + "e")
-        if len(word) > 5 and word[-4] == word[-5]: # e.g. running -> run
+        if len(word) > 5 and word[-4] == word[-5]:
             candidates.append(word[:-4])
     if word.endswith("ly") and len(word) > 3:
         candidates.append(word[:-2])
         candidates.append(word[:-2] + "le")
     return candidates
 
-def lookup(query_text):
-    word = clean_word(query_text)
-    if not word:
-        return {
-            "found": False,
-            "word": query_text,
-            "error": "No valid word selected"
-        }
+def lookup_sqlite(word):
+    db_path = None
+    if os.path.isfile(DEFAULT_DB_PATH):
+        db_path = DEFAULT_DB_PATH
+    elif os.path.isfile(LOCAL_DB_PATH):
+        db_path = LOCAL_DB_PATH
 
-    conn = get_db_connection()
-    if not conn:
-        return {
-            "found": False,
-            "word": word,
-            "error": "Local dictionary database not found"
-        }
+    if not db_path:
+        return None
 
-    cursor = conn.cursor()
-    candidates = lemmatize(word)
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        candidates = lemmatize(word)
 
-    found_word = None
-    rows = []
+        found_word = None
+        rows = []
 
-    for cand in candidates:
-        cursor.execute("SELECT word, wordtype, definition FROM entries WHERE word = ? COLLATE NOCASE", (cand,))
-        results = cursor.fetchall()
-        if results:
-            found_word = cand
-            rows = results
-            break
+        for cand in candidates:
+            cursor.execute("SELECT word, wordtype, definition FROM entries WHERE word = ? COLLATE NOCASE", (cand,))
+            results = cursor.fetchall()
+            if results:
+                found_word = cand
+                rows = results
+                break
 
-    if not rows:
-        # Check prefix suggestions
-        cursor.execute("SELECT DISTINCT word FROM entries WHERE word LIKE ? LIMIT 6", (word + "%",))
-        suggestions = [r[0] for r in cursor.fetchall()]
+        if not rows:
+            cursor.execute("SELECT DISTINCT word FROM entries WHERE word LIKE ? LIMIT 6", (word + "%",))
+            suggestions = [r[0] for r in cursor.fetchall()]
+            conn.close()
+            return {
+                "found": False,
+                "word": word,
+                "suggestions": suggestions,
+                "error": f"No definition found for '{word}'"
+            }
+
         conn.close()
+
+        definitions = []
+        wordtypes = set()
+
+        for w, wt, d in rows:
+            if wt and wt.strip():
+                wordtypes.add(wt.strip())
+            clean_def = re.sub(r"\s+", " ", d.strip())
+            definitions.append(clean_def)
+
+        type_str = ", ".join(sorted(wordtypes)) if wordtypes else ""
+        summary = f"{found_word}" + (f" ({type_str})" if type_str else "") + f": {definitions[0]}"
+
+        return {
+            "found": True,
+            "word": found_word,
+            "backend": "sqlite",
+            "wordtype": type_str,
+            "definitions": definitions[:8],
+            "summary": summary
+        }
+    except Exception as e:
         return {
             "found": False,
             "word": word,
-            "suggestions": suggestions,
-            "error": f"No definition found for '{word}'"
+            "error": str(e)
         }
 
-    conn.close()
+def lookup(raw_query):
+    word = clean_word(raw_query)
+    if not word:
+        return {"found": False, "word": raw_query, "error": "No valid word selected"}
 
-    definitions = []
-    wordtypes = set()
+    # 1. Try SDCV if installed
+    res = lookup_sdcv(word)
+    if res and res.get("found"):
+        return res
 
-    for w, wt, d in rows:
-        if wt and wt.strip():
-            wordtypes.add(wt.strip())
-        clean_def = re.sub(r"\s+", " ", d.strip())
-        definitions.append(clean_def)
+    # 2. Try dict client if installed
+    res = lookup_dict_cli(word)
+    if res and res.get("found"):
+        return res
 
-    type_str = ", ".join(sorted(wordtypes)) if wordtypes else ""
-    summary = f"{found_word}" + (f" ({type_str})" if type_str else "") + f": {definitions[0]}"
+    # 3. Use local SQLite dictionary
+    res = lookup_sqlite(word)
+    if res:
+        return res
 
     return {
-        "found": True,
-        "word": found_word,
-        "original_query": query_text.strip(),
-        "wordtype": type_str,
-        "definitions": definitions[:8],
-        "summary": summary
+        "found": False,
+        "word": word,
+        "error": f"No local dictionary found. Install sdcv (sudo pacman -S sdcv) or place dictionary.db in ~/.local/share/noctalia/dictionary/"
     }
 
 def main():

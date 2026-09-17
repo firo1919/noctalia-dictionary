@@ -1,13 +1,13 @@
 id           = "firomsa/dictionary"
 name         = "Dictionary"
-version      = "0.1.0"
+version      = "0.2.0"
 plugin_api   = 14
 author       = "Firomsa"
 license      = "MIT"
 icon         = "vocabulary"
-description  = "Fast offline dictionary with screen OCR selection, instant definition popout, and clipboard copy."
-dependencies = ["grim", "slurp", "tesseract", "python3"]
-tags         = ["utility", "productivity", "dictionary", "ocr"]
+description  = "Fast offline dictionary. Select any text on screen with your mouse, or look up pre-selected words instantly with automatic clipboard copy and definition cards."
+dependencies = ["wl-paste", "python3"]
+tags         = ["utility", "productivity", "dictionary", "offline"]
 
 # ── General Settings ──────────────────────────────────────────────────────────
 
@@ -33,16 +33,13 @@ description_key = "settings.show_panel_on_lookup.description"
 default         = true
 
 [[setting]]
-key             = "psm"
-type            = "select"
-label_key       = "settings.psm.label"
-description_key = "settings.psm.description"
-default         = "6"
-options = [
-  { value = "6", label_key = "settings.psm.options.block" },
-  { value = "7", label_key = "settings.psm.options.line" },
-  { value = "8", label_key = "settings.psm.options.word" },
-]
+key             = "selection_timeout_seconds"
+type            = "int"
+label_key       = "settings.selection_timeout.label"
+description_key = "settings.selection_timeout.description"
+default         = 15
+min             = 5
+max             = 60
 
 # ── Panel ─────────────────────────────────────────────────────────────────────
 
