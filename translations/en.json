@@ -8,9 +8,14 @@
       "description": "Bar icon for the dictionary widget",
       "label": "Widget Icon"
     },
-    "selection_timeout": {
-      "description": "How many seconds to wait for text selection after clicking the widget",
-      "label": "Selection Timeout (Seconds)"
+    "psm": {
+      "description": "Tesseract page segmentation mode for OCR capture",
+      "label": "OCR Page Segmentation Mode",
+      "options": {
+        "block": "Uniform block of text (PSM 6)",
+        "line": "Single text line (PSM 7)",
+        "word": "Single word (PSM 8)"
+      }
     },
     "show_notification": {
       "description": "Show a desktop toast notification displaying the recognized word and definition",
@@ -28,15 +33,15 @@
     "btn_grab": "Select Text",
     "btn_copy": "Copy",
     "btn_copied": "Copied!",
-    "no_word": "Highlight text on screen with your mouse or search above to view definitions.",
+    "no_word": "Select text on your screen or search above to view definitions.",
     "definitions_title": "Definitions",
     "suggestions_title": "Did you mean:",
     "history_title": "Recent Lookups",
-    "status_capturing": "Highlight any text with your mouse..."
+    "status_capturing": "Drag a box over any word on screen..."
   },
   "widget": {
-    "capturing": "Dictionary: highlight any text with your mouse...",
-    "missing_deps": "Dictionary: missing dependencies (needs wl-paste and python3)",
-    "tooltip": "Offline Dictionary\nLeft-click: Define highlighted text (or click to select)\nRight-click: Search Panel"
+    "capturing": "Dictionary: drag a box over any word on screen...",
+    "missing_deps": "Dictionary: missing dependencies (needs grim, slurp, tesseract, python3)",
+    "tooltip": "Offline Dictionary\nLeft-click: Select any word on screen\nRight-click: Search Panel"
   }
 }
