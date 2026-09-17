@@ -1,7 +1,9 @@
 --!nonstrict
 -- Dictionary status bar widget for Noctalia.
--- Click to define currently highlighted text on screen, or click to wait for selection.
--- Completely native to Wayland (wl-paste) with zero OCR or screenshots needed.
+-- Workflow:
+-- 1. Click the widget -> it arms waiting mode (pointer icon).
+-- 2. Highlight any word on your screen with your mouse.
+-- 3. It immediately captures the text, defines it offline, copies to clipboard, and shows definition.
 
 local isWaiting = false
 local available = noctalia.commandExists("wl-paste") and noctalia.commandExists("python3")
@@ -31,6 +33,7 @@ local function render()
       align = "center",
       gap = 4,
       onClick = function()
+        -- Click while waiting cancels waiting mode
         isWaiting = false
         render()
       end,
@@ -43,7 +46,7 @@ local function render()
       align = "center",
       gap = 4,
       onClick = function()
-        handleTrigger()
+        startWaitingForSelection()
       end,
     }, {
       ui.glyph({ name = glyph, size = 15, color = "on_surface" }),
@@ -100,10 +103,13 @@ local function processWord(wordText)
       noctalia.notify("Dictionary", err)
       noctalia.togglePanel("firomsa/dictionary:panel")
     end
+
+    -- Clear primary selection so it does not linger
+    noctalia.runAsync("wl-copy -p -c")
   end, 15000)
 end
 
-function handleTrigger()
+function startWaitingForSelection()
   if not available then
     return
   end
@@ -114,41 +120,36 @@ function handleTrigger()
     return
   end
 
-  -- Check if text is ALREADY highlighted on screen
-  noctalia.runAsync("wl-paste -p -n", function(res)
-    local currentSel = noctalia.string.trim((res and res.stdout) or "")
-    if currentSel ~= "" and #currentSel < 100 then
-      -- User already selected text! Immediately process it.
-      processWord(currentSel)
-    else
-      -- User has not selected text yet; arm waiting mode
-      isWaiting = true
+  -- 1. Clear any old primary selection first
+  noctalia.runAsync("wl-copy -p -c", function()
+    -- 2. Transition to waiting mode
+    isWaiting = true
+    render()
+
+    local timeoutSec = tonumber(noctalia.getConfig("selection_timeout_seconds")) or 20
+    local watchScript = getScriptPath("watch_selection.py")
+    local cmd = 'python3 "' .. watchScript .. '" ' .. tostring(timeoutSec)
+
+    -- 3. Await user selection
+    noctalia.runAsync(cmd, function(watchRes)
+      if not isWaiting then
+        return -- was cancelled by user
+      end
+      isWaiting = false
       render()
 
-      local timeoutSec = tonumber(noctalia.getConfig("selection_timeout_seconds")) or 15
-      local watchScript = getScriptPath("watch_selection.py")
-      local cmd = 'python3 "' .. watchScript .. '" ' .. tostring(timeoutSec)
-
-      noctalia.runAsync(cmd, function(watchRes)
-        if not isWaiting then
-          return -- was cancelled
+      if watchRes and watchRes.exitCode == 0 and watchRes.stdout and watchRes.stdout ~= "" then
+        local selected = noctalia.string.trim(watchRes.stdout)
+        if selected ~= "" then
+          processWord(selected)
         end
-        isWaiting = false
-        render()
-
-        if watchRes and watchRes.exitCode == 0 and watchRes.stdout and watchRes.stdout ~= "" then
-          local selected = noctalia.string.trim(watchRes.stdout)
-          if selected ~= "" then
-            processWord(selected)
-          end
-        end
-      end, (timeoutSec + 2) * 1000)
-    end
-  end, 2000)
+      end
+    end, (timeoutSec + 2) * 1000)
+  end)
 end
 
 function onClick()
-  handleTrigger()
+  startWaitingForSelection()
 end
 
 function onRightClick()
@@ -157,7 +158,7 @@ end
 
 function onIpc(event, _payload)
   if event == "trigger" or event == "grab" then
-    handleTrigger()
+    startWaitingForSelection()
   end
 end
 

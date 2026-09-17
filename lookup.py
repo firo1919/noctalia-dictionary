@@ -20,7 +20,6 @@ LOCAL_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dictio
 
 def clean_word(raw):
     s = raw.strip()
-    # Strip quotes, punctuation, brackets
     s = re.sub(r"^[^a-zA-Z]+|[^a-zA-Z]+$", "", s)
     return s.strip().lower()
 
@@ -40,8 +39,6 @@ def lookup_sdcv(word):
         if not out or "Nothing similar to" in out or "No dictionaries found" in out:
             return None
 
-        # Parse sdcv output
-        definitions = []
         lines = out.splitlines()
         clean_lines = []
         for line in lines:
@@ -118,7 +115,7 @@ def lemmatize(word):
         candidates.append(word[:-2] + "le")
     return candidates
 
-def lookup_sqlite(word):
+def lookup_sqlite_single(word):
     db_path = None
     if os.path.isfile(DEFAULT_DB_PATH):
         db_path = DEFAULT_DB_PATH
@@ -184,30 +181,44 @@ def lookup_sqlite(word):
             "error": str(e)
         }
 
-def lookup(raw_query):
-    word = clean_word(raw_query)
-    if not word:
+def lookup_query(raw_query):
+    # Try exact / full cleaned word first
+    clean = clean_word(raw_query)
+    if not clean:
         return {"found": False, "word": raw_query, "error": "No valid word selected"}
 
-    # 1. Try SDCV if installed
-    res = lookup_sdcv(word)
+    # 1. Try SDCV
+    res = lookup_sdcv(clean)
     if res and res.get("found"):
         return res
 
-    # 2. Try dict client if installed
-    res = lookup_dict_cli(word)
+    # 2. Try dict CLI
+    res = lookup_dict_cli(clean)
     if res and res.get("found"):
         return res
 
-    # 3. Use local SQLite dictionary
-    res = lookup_sqlite(word)
+    # 3. Try SQLite
+    res = lookup_sqlite_single(clean)
+    if res and res.get("found"):
+        return res
+
+    # 4. If query had multiple words, try first word as fallback
+    words = raw_query.strip().split()
+    if len(words) > 1:
+        first = clean_word(words[0])
+        if first and first != clean:
+            first_res = lookup_query(first)
+            if first_res and first_res.get("found"):
+                return first_res
+
+    # Return suggestions from the original single lookup if available
     if res:
         return res
 
     return {
         "found": False,
-        "word": word,
-        "error": f"No local dictionary found. Install sdcv (sudo pacman -S sdcv) or place dictionary.db in ~/.local/share/noctalia/dictionary/"
+        "word": clean,
+        "error": f"No definition found for '{clean}'"
     }
 
 def main():
@@ -216,7 +227,7 @@ def main():
         sys.exit(1)
 
     query = " ".join(sys.argv[1:])
-    result = lookup(query)
+    result = lookup_query(query)
     print(json.dumps(result))
 
 if __name__ == "__main__":
