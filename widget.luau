@@ -24,7 +24,7 @@ local function render()
       align = "center",
       gap = 4,
       onClick = function()
-        noctalia.togglePanel("firomsa/dictionary:panel")
+        noctalia.togglePanel("firo1919/dictionary:panel")
       end,
     }, {
       ui.glyph({ name = glyph, size = 15, color = "on_surface_variant" }),
@@ -35,7 +35,7 @@ local function render()
       align = "center",
       gap = 4,
       onClick = function()
-        noctalia.togglePanel("firomsa/dictionary:panel")
+        noctalia.togglePanel("firo1919/dictionary:panel")
       end,
     }, {
       ui.glyph({ name = "crosshair", size = 15, color = "primary" }),
@@ -106,12 +106,12 @@ local function handleResult(res)
     end
 
     if showPanel then
-      noctalia.togglePanel("firomsa/dictionary:panel")
+      noctalia.togglePanel("firo1919/dictionary:panel")
     end
   else
     local err = data.error or ("No definition found for '" .. (data.word or "") .. "'")
     noctalia.notify("Dictionary", err)
-    noctalia.togglePanel("firomsa/dictionary:panel")
+    noctalia.togglePanel("firo1919/dictionary:panel")
   end
 end
 
@@ -149,7 +149,7 @@ function onClick()
 end
 
 function onRightClick()
-  noctalia.togglePanel("firomsa/dictionary:panel")
+  noctalia.togglePanel("firo1919/dictionary:panel")
 end
 
 function onIpc(event, _payload)

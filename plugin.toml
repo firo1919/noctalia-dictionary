@@ -1,8 +1,8 @@
-id           = "firomsa/dictionary"
+id           = "firo1919/dictionary"
 name         = "Dictionary"
 version      = "0.3.0"
 plugin_api   = 14
-author       = "Firomsa"
+author       = "firo1919"
 license      = "MIT"
 icon         = "vocabulary"
 description  = "Fast offline dictionary. Click to drag a box over any text on screen (in browsers, videos, PDFs, or apps) to instantly look up its definition and copy to clipboard."
@@ -62,8 +62,8 @@ id    = "widget"
 entry = "widget.luau"
 
   [widget.actions]
-  left  = "panel-toggle firomsa/dictionary:panel"
-  right = "exec noctalia msg panel-toggle firomsa/dictionary:panel"
+  left  = "panel-toggle firo1919/dictionary:panel"
+  right = "exec noctalia msg panel-toggle firo1919/dictionary:panel"
 
   [[widget.setting]]
   key             = "glyph"

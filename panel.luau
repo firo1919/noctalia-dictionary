@@ -71,7 +71,7 @@ end
 local function triggerSelection()
   panel.close()
   noctalia.setTimeout(200, function()
-    noctalia.sendIpc("firomsa/dictionary:widget", "trigger")
+    noctalia.sendIpc("firo1919/dictionary:widget", "grab")
   end)
 end
 
@@ -92,7 +92,7 @@ function render()
       }),
       ui.button({
         text = tr("panel.btn_grab"),
-        glyph = "pointer",
+        glyph = "crosshair",
         variant = "ghost",
         onClick = triggerSelection,
       }),

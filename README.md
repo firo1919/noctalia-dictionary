@@ -45,7 +45,7 @@ sudo pacman -S grim slurp tesseract tesseract-data-eng python
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/firomsa/noctalia-dictionary.git ~/Projects/noctalia-dictionary
+git clone https://github.com/firo1919/noctalia-dictionary.git ~/Projects/noctalia-dictionary
 ```
 
 ### 2. Register as a Local Noctalia Source
@@ -61,14 +61,14 @@ noctalia msg plugins source add local-dev path ~/.local/share/noctalia/sources/l
 ### 3. Enable the Plugin
 
 ```bash
-noctalia msg plugins enable firomsa/dictionary
+noctalia msg plugins enable firo1919/dictionary
 ```
 
 ### 4. Add the Widget to Your Bar
 
 1. Open Noctalia Settings (`noctalia msg settings-open`).
 2. Go to **Bar** → select your capsule group (e.g. `g4`).
-3. Click **Add Widget** and select **Dictionary** (`firomsa/dictionary:widget`).
+3. Click **Add Widget** and select **Dictionary** (`firo1919/dictionary:widget`).
 
 ## Usage
 
