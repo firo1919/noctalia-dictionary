@@ -7,6 +7,7 @@ Auto-decompresses into ~/.cache/noctalia-dictionary/ on first run.
 Features:
 - Candidate morphology rules (plurals, -ing, -ed, -ly, -er, -est, etc.)
 - Progressive prefix backoff suggestions when an exact match is missing
+- Direct wl-copy clipboard integration (no shell escaping issues)
 - Sub-millisecond indexed SQLite queries
 """
 
@@ -16,6 +17,7 @@ import re
 import json
 import lzma
 import sqlite3
+import subprocess
 
 CACHE_DIR = os.path.expanduser("~/.cache/noctalia-dictionary")
 RUNTIME_DB = os.path.join(CACHE_DIR, "webster1913.sqlite")
@@ -46,7 +48,7 @@ def ensure_database():
                 f_out.write(chunk)
         os.replace(tmp_path, RUNTIME_DB)
         return RUNTIME_DB
-    except Exception as e:
+    except Exception:
         if os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
@@ -99,8 +101,8 @@ def build_candidates(norm_query):
     if w.endswith("ing") and len(w) > 4:
         add(w[:-3])
         add(w[:-3] + "e")
-        if len(w) > 5 and w[-4] == w[-5]:
-            add(w[:-4])
+        if len(word_end := w[:-3]) and len(word_end) > 1 and word_end[-1] == word_end[-2]:
+            add(word_end[:-1])
     # -ed -> -, -d, -e
     if w.endswith("ed") and len(w) > 3:
         add(w[:-2])
@@ -217,13 +219,29 @@ def query_database(raw_query):
         "suggestions": []
     }
 
+def copy_to_clipboard(text):
+    try:
+        subprocess.run(["wl-copy"], input=text.encode("utf-8"), check=True, timeout=2)
+    except Exception:
+        pass
+
 def main():
-    if len(sys.argv) < 2:
+    args = sys.argv[1:]
+    if not args:
         print(json.dumps({"found": False, "error": "Missing word argument"}))
         sys.exit(1)
 
-    query = " ".join(sys.argv[1:])
+    should_copy = False
+    if args[0] == "--copy":
+        should_copy = True
+        args = args[1:]
+
+    query = " ".join(args)
     result = query_database(query)
+
+    if should_copy and result.get("found") and result.get("summary"):
+        copy_to_clipboard(result["summary"])
+
     print(json.dumps(result))
 
 if __name__ == "__main__":

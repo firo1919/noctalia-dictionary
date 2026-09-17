@@ -62,7 +62,8 @@ local function processLookup(query)
   render()
 
   local scriptPath = getLookupScriptPath()
-  local cmd = 'python3 "' .. scriptPath .. '" ' .. string.format("%q", q)
+  local copyFlag = (noctalia.getConfig("copy_to_clipboard") ~= false) and "--copy " or ""
+  local cmd = 'python3 "' .. scriptPath .. '" ' .. copyFlag .. string.format("%q", q)
 
   noctalia.runAsync(cmd, function(res)
     busy = false
@@ -83,17 +84,10 @@ local function processLookup(query)
     -- Update shared state for panel
     noctalia.state.set("dict_current", data)
 
-    local copyToClipboard = noctalia.getConfig("copy_to_clipboard") ~= false
     local showNotification = noctalia.getConfig("show_notification") ~= false
     local showPanel = noctalia.getConfig("show_panel_on_lookup") ~= false
 
     if data.found then
-      if copyToClipboard and data.summary then
-        noctalia.copyToClipboard(data.summary, "text/plain")
-        -- Also invoke wl-copy directly so Wayland desktop apps receive it immediately
-        noctalia.runAsync(string.format("printf '%%s' %q | wl-copy", data.summary))
-      end
-
       if showNotification then
         local title = data.word or q
         if data.wordtype and data.wordtype ~= "" then
