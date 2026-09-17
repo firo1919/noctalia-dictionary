@@ -90,6 +90,8 @@ local function processLookup(query)
     if data.found then
       if copyToClipboard and data.summary then
         noctalia.copyToClipboard(data.summary, "text/plain")
+        -- Also invoke wl-copy directly so Wayland desktop apps receive it immediately
+        noctalia.runAsync(string.format("printf '%%s' %q | wl-copy", data.summary))
       end
 
       if showNotification then
