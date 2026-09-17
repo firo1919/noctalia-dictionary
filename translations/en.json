@@ -1,0 +1,47 @@
+{
+  "settings": {
+    "copy_to_clipboard": {
+      "description": "Automatically copy word and definition to the system clipboard upon lookup",
+      "label": "Copy Definition to Clipboard"
+    },
+    "glyph": {
+      "description": "Bar icon for the dictionary widget",
+      "label": "Widget Icon"
+    },
+    "psm": {
+      "description": "Tesseract page segmentation mode for OCR capture",
+      "label": "OCR Page Segmentation Mode",
+      "options": {
+        "block": "Uniform block of text (PSM 6)",
+        "line": "Single text line (PSM 7)",
+        "word": "Single word (PSM 8)"
+      }
+    },
+    "show_notification": {
+      "description": "Show a desktop toast notification displaying the recognized word and definition",
+      "label": "Show Toast Notification"
+    },
+    "show_panel_on_lookup": {
+      "description": "Automatically open the dictionary panel to display full definitions when selecting from screen",
+      "label": "Open Panel on Lookup"
+    }
+  },
+  "panel": {
+    "title": "Offline Dictionary",
+    "search_placeholder": "Search any word...",
+    "btn_search": "Search",
+    "btn_grab": "Select from Screen",
+    "btn_copy": "Copy",
+    "btn_copied": "Copied!",
+    "no_word": "Select text on your screen or search above to view definitions.",
+    "definitions_title": "Definitions",
+    "suggestions_title": "Did you mean:",
+    "history_title": "Recent Lookups",
+    "status_capturing": "Waiting for screen selection..."
+  },
+  "widget": {
+    "capturing": "Dictionary: selecting region...",
+    "missing_deps": "Dictionary: missing dependencies (needs grim, slurp, tesseract, python3)",
+    "tooltip": "Offline Dictionary\nLeft-click: Select word on screen\nRight-click: Open Search Panel"
+  }
+}

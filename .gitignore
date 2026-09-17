@@ -1,0 +1,9 @@
+# Local test databases / cache
+*.png
+.cache/
+dictionary.db
+
+# OS / Editor
+.DS_Store
+.vscode/
+.idea/
