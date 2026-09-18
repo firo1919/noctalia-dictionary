@@ -58,13 +58,10 @@ end
 
 local function onCopyCurrent()
   if currentData and currentData.summary then
-    noctalia.copyToClipboard(currentData.summary, "text/plain")
     local scriptPath = getLookupScriptPath()
-    noctalia.runAsync('python3 "' .. scriptPath .. '" --copy ' .. string.format("%q", currentData.word or ""))
-    copyStatus = tr("panel.btn_copied")
-    render()
-    noctalia.setTimeout(2000, function()
-      copyStatus = tr("panel.btn_copy")
+    local cmd = 'python3 "' .. scriptPath .. '" --copy ' .. string.format("%q", currentData.word or "")
+    noctalia.runAsync(cmd, function()
+      copyStatus = tr("panel.btn_copied")
       render()
     end)
   end
@@ -72,9 +69,38 @@ end
 
 local function triggerScreenGrab()
   panel.close()
-  noctalia.setTimeout(250, function()
-    noctalia.sendIpc("firo1919/dictionary:widget", "grab")
-  end)
+
+  local scriptPath = getLookupScriptPath()
+  local cmd = 'sleep 0.2; '
+    .. 'geom="$(slurp)" || exit 40; '
+    .. 'img="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/noctalia-dict-XXXXXX.png")" || exit 41; '
+    .. 'trap \'rm -f "$img" 2>/dev/null\' EXIT; '
+    .. 'grim -g "$geom" "$img" || exit 42; '
+    .. 'txt="$(tesseract "$img" stdout -l eng --psm 6 2>/dev/null)" || exit 43; '
+    .. 'python3 "' .. scriptPath .. '" --copy "$txt"'
+
+  noctalia.runAsync(cmd, function(res)
+    if res and res.stdout and res.stdout ~= "" then
+      local ok, data = pcall(noctalia.json.decode, res.stdout)
+      if ok and type(data) == "table" then
+        noctalia.state.set("dict_current", data)
+
+        if data.found then
+          local title = data.word or "Dictionary"
+          if data.wordtype and data.wordtype ~= "" then
+            title = title .. " (" .. data.wordtype .. ")"
+          end
+          local body = (data.definitions and data.definitions[1]) or ""
+          noctalia.notify(title, body)
+        else
+          local err = data.error or ("No definition found for '" .. (data.word or "") .. "'")
+          noctalia.notify("Dictionary", err)
+        end
+
+        noctalia.togglePanel("firo1919/dictionary:panel")
+      end
+    end
+  end, 60000)
 end
 
 function render()
