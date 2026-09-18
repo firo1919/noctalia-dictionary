@@ -1,6 +1,6 @@
 --!nonstrict
 -- Dictionary panel for Noctalia.
--- Shows offline definition card, manual search input, progressive suggestions, and history.
+-- Shows offline definition card, manual search input, progressive suggestions, and screen grab trigger.
 
 local currentData = nil
 local searchInput = ""
@@ -59,6 +59,8 @@ end
 local function onCopyCurrent()
   if currentData and currentData.summary then
     noctalia.copyToClipboard(currentData.summary, "text/plain")
+    local scriptPath = getLookupScriptPath()
+    noctalia.runAsync('python3 "' .. scriptPath .. '" --copy ' .. string.format("%q", currentData.word or ""))
     copyStatus = tr("panel.btn_copied")
     render()
     noctalia.setTimeout(2000, function()
@@ -66,6 +68,13 @@ local function onCopyCurrent()
       render()
     end)
   end
+end
+
+local function triggerScreenGrab()
+  panel.close()
+  noctalia.setTimeout(250, function()
+    noctalia.sendIpc("firo1919/dictionary:widget", "grab")
+  end)
 end
 
 function render()
@@ -82,6 +91,12 @@ function render()
         fontWeight = "bold",
         color = "on_surface",
         flexGrow = 1,
+      }),
+      ui.button({
+        text = tr("panel.btn_grab"),
+        glyph = "crosshair",
+        variant = "ghost",
+        onClick = triggerScreenGrab,
       }),
     })
   )

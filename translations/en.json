@@ -8,12 +8,21 @@
       "description": "Bar icon for the dictionary widget",
       "label": "Widget Icon"
     },
+    "psm": {
+      "description": "Tesseract page segmentation mode for OCR capture",
+      "label": "OCR Page Segmentation Mode",
+      "options": {
+        "block": "Uniform block of text (PSM 6)",
+        "line": "Single text line (PSM 7)",
+        "word": "Single word (PSM 8)"
+      }
+    },
     "show_notification": {
       "description": "Show a desktop toast notification displaying the recognized word and definition",
       "label": "Show Toast Notification"
     },
     "show_panel_on_lookup": {
-      "description": "Automatically open the dictionary panel to display full definitions when looking up a word",
+      "description": "Automatically open the dictionary panel to display full definitions when selecting from screen",
       "label": "Open Panel on Lookup"
     }
   },
@@ -21,16 +30,17 @@
     "title": "Offline Dictionary",
     "search_placeholder": "Search any word...",
     "btn_search": "Search",
+    "btn_grab": "Select from Screen",
     "btn_copy": "Copy",
     "btn_copied": "Copied!",
-    "no_word": "Highlight or copy any word on your screen, then click the bar widget — or type above to look up.",
+    "no_word": "Drag a box over text on your screen or search above to view definitions.",
     "definitions_title": "Definitions",
     "suggestions_title": "Did you mean:",
     "history_title": "Recent Lookups"
   },
   "widget": {
-    "capturing": "Dictionary: looking up word...",
-    "missing_deps": "Dictionary: missing dependencies (needs wl-paste and python3)",
-    "tooltip": "Offline Dictionary\nClick: Define highlighted or copied text (or open search)\nRight-click: Search Panel"
+    "capturing": "Dictionary: drag a box over any word on screen...",
+    "missing_deps": "Dictionary: missing dependencies (needs grim, slurp, tesseract, python3)",
+    "tooltip": "Offline Dictionary\nLeft-click: Select any word on screen\nRight-click: Search Panel"
   }
 }
